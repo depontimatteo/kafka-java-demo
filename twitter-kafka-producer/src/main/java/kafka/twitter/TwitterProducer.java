@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 public class TwitterProducer {
 
-    Logger logger = LoggerFactory.getLogger(TwitterProducer.class);
+    Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
 
     private String twitterApiKey = "UhN0asN6RW6k9nLXgZbyb336Z";
     private String twitterApiKeySecret = "XHT88AZ8VKNuSwbGWJkeTFJHVwBV4fGCiC6m9rSgDrYcw97YhK";
