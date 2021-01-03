@@ -128,6 +128,17 @@ public class TwitterProducer {
         properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
+        // add safety producer properties (idempotence and zero data loss due to network problems)
+        properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        // these safety values are explicitly added for clearance, but are the defaults with idempotence enabled
+        // I always want an ACK from the broker
+        properties.setProperty(ProducerConfig.ACKS_CONFIG, "all");
+        // I set the retries number to the max value possible
+        properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE));
+        // I'm using Kafka 2.0 so I can put 5 in this property, otherwise I must put 1
+        properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
+
+
         // create producer
         KafkaProducer<String,String> producer = new KafkaProducer<String, String>(properties);
 
