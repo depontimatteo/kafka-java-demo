@@ -30,7 +30,7 @@ public class TwitterProducer {
     private String twitterAccessToken = "750225429936603136-n9AEVblI5W9jSMsfLV3AHeTPTxAHtbv";
     private String twitterAccessTokenSecret = "OJMvtH2g8SvT50pd9HpraGOPoWwgJSgsHI2IWs428ZzY7";
 
-    private List<String> terms = Lists.newArrayList("Milan");
+    private List<String> terms = Lists.newArrayList("usa", "covid", "vaxine");
 
     public TwitterProducer(){}
 
@@ -137,6 +137,11 @@ public class TwitterProducer {
         properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE));
         // I'm using Kafka 2.0 so I can put 5 in this property, otherwise I must put 1
         properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
+
+        //  add high throughput properties (at the expense of a little bit of latency -ms- and CPU usage for compression)
+        properties.setProperty(ProducerConfig.LINGER_MS_CONFIG, "20");
+        properties.setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy"); // best performance compression algorythm, made by Google
+        properties.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(32*1024)); // 16 KB batch size messages
 
 
         // create producer
