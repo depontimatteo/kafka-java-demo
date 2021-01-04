@@ -13,6 +13,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -76,7 +78,7 @@ public class ElasticsearchConsumer {
         // manually commit offset cause I need to save the commit of the offset after I put data into elasticsearch
         properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         // I want to process only a bunch of 10 messages every poll made by my consumer
-        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10");
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
 
         // create consumer
         KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(properties);
@@ -108,48 +110,55 @@ public class ElasticsearchConsumer {
             // I'm polling the topic with my consumer
 
             ConsumerRecords<String,String> records = elasticsearchConsumer.poll(Duration.ofMillis(100));
+            Integer recordsCount = records.count();
+            BulkRequest bulkRequest = new BulkRequest();
+
+            logger.info("Received " + recordsCount.toString() + " tweets");
 
             for(ConsumerRecord<String,String> record : records){
 
-                // Due to avoid duplicates, I need to add an ID while putting data into Elasticsearch
-                // I have two strategies:
-                // - use a generic Kafka unique string Id with topic + partition + offset mixed
-                // - use the tweet id coming from data processed
-
-                // Generic Kafka id
-                //String dataId = record.topic() + "_" + record.partition() + "_" + record.offset();
-
-                // Tweet id
-                String dataId = getTweetId(record.value());
-
-                logger.info("Tweet Id: " + dataId);
-
-                // And then for every record I put the JSON processed into Elasticsearch
-                IndexRequest request = new IndexRequest(
-                        "twitter",
-                        "tweets",
-                        dataId
-                ).source(record.value(), XContentType.JSON);
-
-                IndexResponse response = client.index(request, RequestOptions.DEFAULT);
-                String id = response.getId();
-
-                logger.info("Id: " + id);
-
                 try {
-                    Thread.sleep(10);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    // Due to avoid duplicates, I need to add an ID while putting data into Elasticsearch
+                    // I have two strategies:
+                    // - use a generic Kafka unique string Id with topic + partition + offset mixed
+                    // - use the tweet id coming from data processed
+
+                    // Generic Kafka id
+                    //String dataId = record.topic() + "_" + record.partition() + "_" + record.offset();
+
+                    // Tweet id
+                    String dataId = getTweetId(record.value());
+
+                    //logger.info("Tweet Id: " + dataId);
+
+                    // And then for every record I put the JSON processed into an IndexRequest object ready to put data into elasticsearch
+                    IndexRequest request = new IndexRequest(
+                            "twitter",
+                            "tweets",
+                            dataId
+                    ).source(record.value(), XContentType.JSON);
+
+                    // I add my IndexRequest object with data into a BulkRequest container
+                    bulkRequest.add(request);
+                }
+                catch(NullPointerException e){
+                    logger.error("Error Exception: ", e);
                 }
             }
 
-            logger.info("Manual committing offsets into state Kafka table");
-            elasticsearchConsumer.commitSync();
-            logger.info("Offsets have been committed");
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            if(recordsCount > 0) {
+                // Now I execute my BulkRequest container of IndexRequests, that submit to elasticsearch all the requests.
+                // Every BulkRequest container contains MAX_POLL_RECORDS_CONFIG records
+                BulkResponse bulkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+
+                logger.info("Manual committing offsets into state Kafka table");
+                elasticsearchConsumer.commitSync();
+                logger.info("Offsets have been committed");
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
         }
 
