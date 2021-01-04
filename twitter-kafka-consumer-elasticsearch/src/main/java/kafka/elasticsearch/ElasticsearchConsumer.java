@@ -1,5 +1,7 @@
 package kafka.elasticsearch;
 
+import com.google.gson.Gson;
+import javafx.beans.binding.ObjectExpression;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -24,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Properties;
 
 public class ElasticsearchConsumer {
@@ -70,12 +73,26 @@ public class ElasticsearchConsumer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, offsetConfig);
+        // manually commit offset cause I need to save the commit of the offset after I put data into elasticsearch
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        // I want to process only a bunch of 10 messages every poll made by my consumer
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10");
 
         // create consumer
         KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(properties);
         consumer.subscribe(Collections.singleton(topic));
 
         return consumer;
+    }
+
+    private static String getTweetId(String record) {
+
+        Gson gson = new Gson();
+
+        HashMap<String, Object> tweet_obj = gson.fromJson(record, HashMap.class);
+
+        return tweet_obj.get("id_str").toString();
+
     }
 
     public static void main(String[] args) throws IOException {
@@ -94,10 +111,24 @@ public class ElasticsearchConsumer {
 
             for(ConsumerRecord<String,String> record : records){
 
+                // Due to avoid duplicates, I need to add an ID while putting data into Elasticsearch
+                // I have two strategies:
+                // - use a generic Kafka unique string Id with topic + partition + offset mixed
+                // - use the tweet id coming from data processed
+
+                // Generic Kafka id
+                //String dataId = record.topic() + "_" + record.partition() + "_" + record.offset();
+
+                // Tweet id
+                String dataId = getTweetId(record.value());
+
+                logger.info("Tweet Id: " + dataId);
+
                 // And then for every record I put the JSON processed into Elasticsearch
                 IndexRequest request = new IndexRequest(
                         "twitter",
-                        "tweets"
+                        "tweets",
+                        dataId
                 ).source(record.value(), XContentType.JSON);
 
                 IndexResponse response = client.index(request, RequestOptions.DEFAULT);
@@ -106,14 +137,24 @@ public class ElasticsearchConsumer {
                 logger.info("Id: " + id);
 
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(10);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+            }
+
+            logger.info("Manual committing offsets into state Kafka table");
+            elasticsearchConsumer.commitSync();
+            logger.info("Offsets have been committed");
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
         //client.close();
 
     }
+
 }
